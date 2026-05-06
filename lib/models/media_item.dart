@@ -1,4 +1,5 @@
 class MediaItem {
+  String? id;
   String title;
   String type;
   String status;
@@ -7,10 +8,12 @@ class MediaItem {
   String lastUpdated;
   bool? isLiked;
   bool isWatchLater;
+  bool isTop5;
   String? posterUrl;
-  int completedCount; // NEW: Tracks rewatches!
+  int completedCount;
 
   MediaItem({
+    this.id,
     required this.title,
     required this.type,
     required this.status,
@@ -19,7 +22,8 @@ class MediaItem {
     required this.lastUpdated,
     this.isLiked,
     this.isWatchLater = false,
+    this.isTop5 = false,
     this.posterUrl,
-    this.completedCount = 0, // Defaults to 0
+    this.completedCount = 0,
   });
 }
