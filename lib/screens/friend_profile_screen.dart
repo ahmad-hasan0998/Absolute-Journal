@@ -4,19 +4,23 @@ import 'package:flutter/material.dart';
 import '../models/media_item.dart';
 import '../services/database_service.dart';
 import '../locator.dart';
+
 class FriendProfileScreen extends StatefulWidget {
   final String uid;
   const FriendProfileScreen({super.key, required this.uid});
   @override
   State<FriendProfileScreen> createState() => _FriendProfileScreenState();
 }
+
 class _FriendProfileScreenState extends State<FriendProfileScreen> {
   String _top5Filter = 'Movie';
+
   ImageProvider? _getAvatarProvider(String? pic) {
     if (pic == null || pic.isEmpty) return null;
     if (pic.startsWith('base64,')) return MemoryImage(base64Decode(pic.substring(7)));
     return NetworkImage(pic);
   }
+
   Widget _buildTopFiveSlot(MediaItem? item, BuildContext context) {
     double slotWidth = MediaQuery.of(context).size.width * 0.23;
     return Container(
@@ -25,6 +29,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
       child: item == null ? const Center(child: Icon(Icons.movie, color: Colors.black12, size: 24)) : null,
     );
   }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<Map<String, dynamic>?>(
@@ -51,11 +56,26 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                             const SizedBox(height: 16),
                             Container(width: 100, height: 100, decoration: BoxDecoration(shape: BoxShape.circle, gradient: const LinearGradient(colors: [Color(0xFFFF6B00), Color(0xFFFFC300)]), boxShadow: [BoxShadow(color: const Color(0xFFFF6B00).withOpacity(0.3), blurRadius: 15, offset: const Offset(0, 5))]), child: Padding(padding: const EdgeInsets.all(3.0), child: Container(decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white, image: _getAvatarProvider(user['profileUrl']) != null ? DecorationImage(image: _getAvatarProvider(user['profileUrl'])!, fit: BoxFit.cover) : null), child: (user['profileUrl'] == null || user['profileUrl'].isEmpty) ? const Icon(Icons.person_rounded, size: 50, color: Color(0xFF0A2463)) : null))),
                             const SizedBox(height: 16),
-                            Text(friendName, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Color(0xFF0A2463))),
+                            FutureBuilder<int>(
+                                future: locator<DatabaseService>().getUserPrevRank(widget.uid),
+                                builder: (context, rankSnapshot) {
+                                  int prevRank = rankSnapshot.data ?? 999;
+                                  return Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(friendName, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Color(0xFF0A2463))),
+                                      if (prevRank <= 3) ...[
+                                        const SizedBox(width: 8),
+                                        Icon(Icons.workspace_premium_rounded, size: 28, color: prevRank == 1 ? const Color(0xFFFFC300) : (prevRank == 2 ? const Color(0xFFBDBDBD) : const Color(0xFF8D6E63)))
+                                      ]
+                                    ],
+                                  );
+                                }
+                            ),
                             const SizedBox(height: 12),
                             Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: rankData['color'].withOpacity(0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: rankData['color'].withOpacity(0.5))), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(rankData['icon'], color: rankData['color'], size: 16), const SizedBox(width: 6), Text(user['rank'] ?? '', style: TextStyle(color: rankData['color'], fontWeight: FontWeight.bold, fontSize: 13))])),
                             const SizedBox(height: 8),
-                            Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.bolt_rounded, color: Color(0xFFFFC300), size: 18), Text(' ${user['xp_score']} XP Score', style: const TextStyle(color: Colors.black54, fontWeight: FontWeight.bold))]),
+                            Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.bolt_rounded, color: Color(0xFFFFC300), size: 18), Text(' ${user['xp_score']} XP ', style: const TextStyle(color: Colors.black54, fontWeight: FontWeight.bold)), const SizedBox(width: 12), const Icon(Icons.local_fire_department_rounded, color: Color(0xFFFF6B00), size: 18), Text(' ${user['streak'] ?? 0} Streak', style: const TextStyle(color: Colors.black54, fontWeight: FontWeight.bold))]),
                             Padding(
                               padding: const EdgeInsets.all(24.0),
                               child: StatefulBuilder(
@@ -129,6 +149,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
     );
   }
 }
+
 class FriendCompletedMediaScreen extends StatefulWidget {
   final List<MediaItem> items;
   final String friendName;
@@ -136,6 +157,7 @@ class FriendCompletedMediaScreen extends StatefulWidget {
   @override
   State<FriendCompletedMediaScreen> createState() => _FriendCompletedMediaScreenState();
 }
+
 class _FriendCompletedMediaScreenState extends State<FriendCompletedMediaScreen> {
   String _filter = 'All';
   @override
@@ -144,6 +166,7 @@ class _FriendCompletedMediaScreenState extends State<FriendCompletedMediaScreen>
     if (_filter == 'Movies') displayItems = displayItems.where((i) => i.type == 'Movie').toList();
     if (_filter == 'Shows') displayItems = displayItems.where((i) => i.type == 'Show').toList();
     return Scaffold(
+        backgroundColor: const Color(0xFFF0F4F8),
         appBar: AppBar(leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF0A2463)), onPressed: () => Navigator.pop(context)), title: Text('${widget.friendName}\'s Archive', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 20, color: Color(0xFF0A2463))), backgroundColor: Colors.transparent, elevation: 0),
         body: Column(
           children: [

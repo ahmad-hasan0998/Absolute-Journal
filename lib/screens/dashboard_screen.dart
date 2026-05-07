@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/media_item.dart';
 import '../providers/journal_provider.dart';
+import '../services/database_service.dart';
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
   void _showMultiAddDialog(BuildContext context, MediaItem item) {
@@ -159,7 +160,7 @@ class DashboardScreen extends StatelessWidget {
         itemBuilder: (context, index) {
           final item = dashboardItems[index];
           return GestureDetector(
-            onLongPress: () => _showCardFocusDialog(context, item),
+            onTap: () => _showCardFocusDialog(context, item),
             child: Container(
               margin: const EdgeInsets.only(bottom: 24),
               padding: const EdgeInsets.all(20),
@@ -181,7 +182,7 @@ class DashboardScreen extends StatelessWidget {
                       children: [
                         Text(item.title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: Color(0xFF0A2463)), maxLines: 2, overflow: TextOverflow.ellipsis),
                         const SizedBox(height: 6),
-                        Text('${item.type} • ${item.lastUpdated}', style: const TextStyle(color: Colors.black45, fontSize: 13, fontWeight: FontWeight.bold)),
+                        Text('${item.type} • ${DatabaseService.formatTimeAgo(item.timestamp)}', style: const TextStyle(color: Colors.black45, fontSize: 13, fontWeight: FontWeight.bold)),
                         if (item.type != 'Movie') ...[
                           const SizedBox(height: 16),
                           ClipRRect(borderRadius: BorderRadius.circular(10), child: LinearProgressIndicator(value: item.progress / item.total, backgroundColor: Colors.grey[200], color: const Color(0xFFFFC300), minHeight: 8)),

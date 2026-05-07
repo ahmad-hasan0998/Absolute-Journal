@@ -1,4 +1,3 @@
-// lib/screens/profile_screen.dart
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -26,6 +25,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (pic.startsWith('base64,')) return MemoryImage(base64Decode(pic.substring(7)));
     return NetworkImage(pic);
   }
+  void _showDebugMenu() {
+    showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+            title: const Text('Time Travel Debug', style: TextStyle(color: Color(0xFF0A2463), fontWeight: FontWeight.w900)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(title: const Text('Simulate Yesterday (Test Streak)', style: TextStyle(fontWeight: FontWeight.bold)), leading: const Icon(Icons.history_rounded, color: Color(0xFFFF6B00)), onTap: () async { await locator<DatabaseService>().debugSetLastActivity(1); if (mounted) Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Set to 1 day ago. Now log an episode!'))); }),
+                ListTile(title: const Text('Simulate Missed Days (Test Decay)', style: TextStyle(fontWeight: FontWeight.bold)), leading: const Icon(Icons.trending_down_rounded, color: Colors.redAccent), onTap: () async { await locator<DatabaseService>().debugSetLastActivity(4); if (mounted) Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Set to 4 days ago. Now tap Force Sync!'))); }),
+                ListTile(title: const Text('Simulate Next Month (Test Reset)', style: TextStyle(fontWeight: FontWeight.bold)), leading: const Icon(Icons.calendar_month_rounded, color: Color(0xFF0A2463)), onTap: () async { await locator<DatabaseService>().debugSetLastReset(35); if (mounted) Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Set to 35 days ago. Now tap Force Sync!'))); }),
+                const Divider(),
+                ListTile(title: const Text('Force Gamification Sync', style: TextStyle(fontWeight: FontWeight.w900, color: Colors.green)), leading: const Icon(Icons.sync_rounded, color: Colors.green), onTap: () async { await locator<DatabaseService>().syncGamification(); if (mounted) Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sync complete!'))); }),
+              ],
+            )
+        )
+    );
+  }
   void _showFriendsDirectory(List<dynamic> currentFriendIds) async {
     _searchController.clear();
     _userSearchResults.clear();
@@ -40,20 +58,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
               builder: (context, setDialogState) {
                 List<Map<String, dynamic>> displayList = isShowingSearch ? _userSearchResults : loadedFriends;
                 return Dialog(
-                  backgroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
+                  backgroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
                   child: Container(
-                    padding: const EdgeInsets.all(24),
-                    constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
+                    padding: const EdgeInsets.all(24), constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
                     child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(isShowingSearch ? 'Search Results' : 'Your Friends', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Color(0xFF0A2463)), textAlign: TextAlign.center),
                         const SizedBox(height: 16),
                         TextField(
-                          controller: _searchController,
-                          onChanged: (val) { if (val.isEmpty) setDialogState(() => isShowingSearch = false); },
+                          controller: _searchController, onChanged: (val) { if (val.isEmpty) setDialogState(() => isShowingSearch = false); },
                           onSubmitted: (val) async {
                             if (val.isEmpty) return;
                             setDialogState(() { isShowingSearch = true; _isSearching = true; });
@@ -74,7 +88,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               var u = displayList[index];
                               bool isAdded = currentFriendIds.contains(u['uid']);
                               String pic = u['profileUrl'] ?? '';
-                              var rankData = DatabaseService.getRankVisuals(u['rank'] ?? 'Beginner Tracker');
+                              var rankData = DatabaseService.getRankVisuals(u['rank'] ?? 'Iron Novice');
                               return ListTile(
                                 leading: CircleAvatar(backgroundColor: const Color(0xFF0A2463), backgroundImage: _getAvatarProvider(pic), child: pic.isEmpty ? const Icon(Icons.person, color: Colors.white) : null),
                                 title: Text(u['username'], style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0A2463))),
@@ -83,9 +97,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   style: TextButton.styleFrom(backgroundColor: isAdded ? Colors.grey[200] : const Color(0xFF0A2463)),
                                   onPressed: () async {
                                     await locator<DatabaseService>().toggleFriend(u['uid'], !isAdded);
-                                    setDialogState(() {
-                                      if (isAdded) { currentFriendIds.remove(u['uid']); if (!isShowingSearch) loadedFriends.removeWhere((f) => f['uid'] == u['uid']); } else { currentFriendIds.add(u['uid']); }
-                                    });
+                                    setDialogState(() { if (isAdded) { currentFriendIds.remove(u['uid']); if (!isShowingSearch) loadedFriends.removeWhere((f) => f['uid'] == u['uid']); } else { currentFriendIds.add(u['uid']); } });
                                     setState(() {});
                                   },
                                   child: Text(isAdded ? 'Remove' : 'Add', style: TextStyle(color: isAdded ? Colors.black54 : Colors.white, fontWeight: FontWeight.bold)),
@@ -153,9 +165,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       backgroundColor: const Color(0xFFF0F4F8),
       appBar: AppBar(
         title: const Text('Profile', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 24, color: Color(0xFF0A2463))),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
+        backgroundColor: Colors.transparent, elevation: 0,
         actions: [
+          IconButton(icon: const Icon(Icons.bug_report_rounded, color: Color(0xFF0A2463)), onPressed: _showDebugMenu),
           StreamBuilder<DocumentSnapshot>(
               stream: locator<DatabaseService>().getUserProfileStream(),
               builder: (context, snapshot) {
@@ -174,6 +186,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             String username = userData['username'] ?? 'User';
             String rank = userData['rank'] ?? 'Iron Novice';
             int xpScore = userData['xp_score'] ?? 0;
+            int streak = userData['streak'] ?? 0;
             String? profileUrl = userData['profileUrl'];
             var rankData = DatabaseService.getRankVisuals(rank);
             return SingleChildScrollView(
@@ -192,11 +205,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Text(username, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Color(0xFF0A2463))),
+                  FutureBuilder<int>(
+                      future: locator<DatabaseService>().getUserPrevRank(locator<DatabaseService>().currentUserId!),
+                      builder: (context, rankSnapshot) {
+                        int prevRank = rankSnapshot.data ?? 999;
+                        return Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(username, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Color(0xFF0A2463))),
+                            if (prevRank <= 3) ...[
+                              const SizedBox(width: 8),
+                              Icon(Icons.workspace_premium_rounded, size: 28, color: prevRank == 1 ? const Color(0xFFFFC300) : (prevRank == 2 ? const Color(0xFFBDBDBD) : const Color(0xFF8D6E63)))
+                            ]
+                          ],
+                        );
+                      }
+                  ),
                   const SizedBox(height: 12),
                   Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: rankData['color'].withOpacity(0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: rankData['color'].withOpacity(0.5))), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(rankData['icon'], color: rankData['color'], size: 16), const SizedBox(width: 6), Text(rank, style: TextStyle(color: rankData['color'], fontWeight: FontWeight.bold, fontSize: 13))])),
                   const SizedBox(height: 8),
-                  Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.bolt_rounded, color: Color(0xFFFFC300), size: 18), Text(' $xpScore XP Score', style: const TextStyle(color: Colors.black54, fontWeight: FontWeight.bold))]),
+                  Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.bolt_rounded, color: Color(0xFFFFC300), size: 18), Text(' $xpScore XP ', style: const TextStyle(color: Colors.black54, fontWeight: FontWeight.bold)), const SizedBox(width: 12), const Icon(Icons.local_fire_department_rounded, color: Color(0xFFFF6B00), size: 18), Text(' $streak Streak', style: const TextStyle(color: Colors.black54, fontWeight: FontWeight.bold))]),
                   Padding(
                     padding: const EdgeInsets.all(24.0),
                     child: StatefulBuilder(

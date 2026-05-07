@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/media_item.dart';
+import '../models/history_log.dart';
 import '../services/database_service.dart';
 import '../locator.dart';
 class JournalProvider extends ChangeNotifier {
@@ -9,23 +10,28 @@ class JournalProvider extends ChangeNotifier {
   Future<void> loadJournal() async {
     isLoading = true;
     notifyListeners();
+    await _db.syncGamification();
     activeItems = await _db.getUserJournal();
     isLoading = false;
     notifyListeners();
   }
   Future<void> addMedia(MediaItem item) async {
-    String? newId = await _db.addMediaToJournal(item);
-    item.id = newId;
+    item.timestamp = DateTime.now();
     activeItems.insert(0, item);
     notifyListeners();
+    String? newId = await _db.addMediaToJournal(item);
+    item.id = newId;
+    if (item.status == 'Completed') {
+      String actionStr = item.type == 'Movie' ? 'Watched Movie' : 'Completed Show';
+      await _db.addHistoryLog(HistoryLog(mediaId: item.id!, title: item.title, type: item.type, action: actionStr, timestamp: item.timestamp!, posterUrl: item.posterUrl, isLiked: item.isLiked));
+    }
   }
   Future<void> updateExistingMedia(MediaItem item) async {
-    await _db.updateMedia(item);
+    item.timestamp = DateTime.now();
     int index = activeItems.indexWhere((element) => element.id == item.id);
-    if (index != -1) {
-      activeItems[index] = item;
-      notifyListeners();
-    }
+    if (index != -1) activeItems[index] = item;
+    notifyListeners();
+    await _db.updateMedia(item);
   }
   void triggerRebuild() {
     notifyListeners();
@@ -34,41 +40,45 @@ class JournalProvider extends ChangeNotifier {
     if (item.status != 'Completed') item.completedCount++;
     int remainingEpisodes = item.total - item.progress;
     int xpEarned = (remainingEpisodes * 10) + 50;
-    await _db.addXP(xpEarned);
     item.status = 'Completed';
-    item.lastUpdated = 'Just now';
+    item.timestamp = DateTime.now();
     item.progress = item.total;
-    await _db.updateMedia(item);
     notifyListeners();
+    await _db.addXP(xpEarned);
+    String actionStr = item.type == 'Movie' ? 'Watched Movie' : 'Completed Show';
+    await _db.addHistoryLog(HistoryLog(mediaId: item.id!, title: item.title, type: item.type, action: actionStr, timestamp: item.timestamp!, posterUrl: item.posterUrl, isLiked: item.isLiked));
+    await _db.updateMedia(item);
   }
   Future<void> incrementProgress(MediaItem item, int amount) async {
     if (item.status == 'Completed') return;
     int oldProgress = item.progress;
     item.progress = (item.progress + amount).clamp(0, item.total);
     int episodesWatched = item.progress - oldProgress;
-    int xpEarned = episodesWatched * 10;
-    item.lastUpdated = 'Just now';
+    item.timestamp = DateTime.now();
+    bool completedNow = false;
     if (item.progress == item.total) {
       item.status = 'Completed';
       item.completedCount++;
-      xpEarned += 50;
+      completedNow = true;
     }
-    await _db.addXP(xpEarned);
-    await _db.updateMedia(item);
     notifyListeners();
+    if (episodesWatched > 0) {
+      int xpEarned = episodesWatched * 10;
+      if (completedNow) xpEarned += 50;
+      await _db.updateMedia(item);
+      await _db.addXP(xpEarned);
+      for(int i = 1; i <= episodesWatched; i++) {
+        int epNum = oldProgress + i;
+        await _db.addHistoryLog(HistoryLog(mediaId: item.id!, title: item.title, type: item.type, action: 'Watched Episode $epNum', timestamp: item.timestamp!, posterUrl: item.posterUrl, isLiked: item.isLiked));
+      }
+    }
   }
   Future<void> updateManualProgress(MediaItem item, int newProgress) async {
     if (item.status == 'Completed' && newProgress == item.total) return;
     bool wasCompleted = item.status == 'Completed';
     int oldProgress = item.progress;
     item.progress = newProgress.clamp(0, item.total);
-    if (item.progress > oldProgress) {
-      int episodesWatched = item.progress - oldProgress;
-      int xpEarned = episodesWatched * 10;
-      if (item.progress == item.total && !wasCompleted) xpEarned += 50;
-      await _db.addXP(xpEarned);
-    }
-    item.lastUpdated = 'Just now';
+    item.timestamp = DateTime.now();
     if (item.progress == item.total) {
       if (!wasCompleted) {
         item.status = 'Completed';
@@ -77,7 +87,17 @@ class JournalProvider extends ChangeNotifier {
     } else {
       item.status = 'Active';
     }
-    await _db.updateMedia(item);
     notifyListeners();
+    if (item.progress > oldProgress) {
+      int episodesWatched = item.progress - oldProgress;
+      int xpEarned = episodesWatched * 10;
+      if (item.progress == item.total && !wasCompleted) xpEarned += 50;
+      await _db.addXP(xpEarned);
+      for(int i = 1; i <= episodesWatched; i++) {
+        int epNum = oldProgress + i;
+        await _db.addHistoryLog(HistoryLog(mediaId: item.id!, title: item.title, type: item.type, action: 'Watched Episode $epNum', timestamp: item.timestamp!, posterUrl: item.posterUrl, isLiked: item.isLiked));
+      }
+    }
+    await _db.updateMedia(item);
   }
 }

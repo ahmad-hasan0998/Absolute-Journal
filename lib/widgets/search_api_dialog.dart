@@ -33,7 +33,7 @@ class _SearchApiDialogState extends State<SearchApiDialog> {
       finalTotal = await _apiService.getTMDBTotalEpisodes(apiItem['id']);
     }
     if (mounted) Navigator.pop(context);
-    MediaItem newItem = MediaItem(title: apiItem['title'], type: apiItem['type'], status: action == 'Completed' || action == 'Top5' ? 'Completed' : 'Active', progress: action == 'Completed' || action == 'Top5' ? finalTotal : 0, total: finalTotal, lastUpdated: 'Just now', posterUrl: apiItem['posterUrl'], isWatchLater: action == 'WatchLater', isTop5: action == 'Top5', completedCount: action == 'Completed' || action == 'Top5' ? 1 : 0);
+    MediaItem newItem = MediaItem(title: apiItem['title'], type: apiItem['type'], status: action == 'Completed' || action == 'Top5' ? 'Completed' : 'Active', progress: action == 'Completed' || action == 'Top5' ? finalTotal : 0, total: finalTotal, lastUpdated: 'Just now', timestamp: DateTime.now(), posterUrl: apiItem['posterUrl'], isWatchLater: action == 'WatchLater', isTop5: action == 'Top5', completedCount: action == 'Completed' || action == 'Top5' ? 1 : 0);
     widget.onItemAdded(newItem);
     if (mounted) Navigator.pop(context);
   }
