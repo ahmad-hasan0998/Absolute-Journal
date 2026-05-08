@@ -16,13 +16,17 @@ class _SplashScreenState extends State<SplashScreen> {
   void initState() {
     super.initState();
     Timer(const Duration(seconds: 3), () {
-      Widget nextScreen = FirebaseAuth.instance.currentUser != null ? const MainScreen() : const LoginScreen();
-      Navigator.of(context).pushReplacement(PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => nextScreen,
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return FadeTransition(opacity: animation, child: child);
-        },
-      ));
+      Widget nextScreen = FirebaseAuth.instance.currentUser != null
+          ? const MainScreen()
+          : const LoginScreen();
+      Navigator.of(context).pushReplacement(
+        PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) => nextScreen,
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return FadeTransition(opacity: animation, child: child);
+          },
+        ),
+      );
     });
   }
 
@@ -36,7 +40,10 @@ class _SplashScreenState extends State<SplashScreen> {
           children: [
             Image.asset('assets/logo_AJ.png', width: 250, height: 250),
             const SizedBox(height: 60),
-            const CircularProgressIndicator(color: Color(0xFFFF6B00), strokeWidth: 3),
+            const CircularProgressIndicator(
+              color: Color(0xFFFF6B00),
+              strokeWidth: 3,
+            ),
           ],
         ),
       ),

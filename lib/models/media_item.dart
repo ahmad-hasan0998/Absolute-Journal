@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class MediaItem {
   String? id;
   int? tmdbId;
@@ -11,8 +13,10 @@ class MediaItem {
   bool? isLiked;
   bool isWatchLater;
   bool isTop5;
+  int top5Order;
   String? posterUrl;
   int completedCount;
+  DocumentSnapshot? snapshot;
 
   MediaItem({
     this.id,
@@ -27,7 +31,9 @@ class MediaItem {
     this.isLiked,
     this.isWatchLater = false,
     this.isTop5 = false,
+    this.top5Order = 0,
     this.posterUrl,
     this.completedCount = 0,
+    this.snapshot,
   });
 }

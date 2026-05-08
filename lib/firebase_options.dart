@@ -64,7 +64,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '828300936239',
     projectId: 'absolute-journal',
     storageBucket: 'absolute-journal.firebasestorage.app',
-    iosClientId: '828300936239-2rstuakmltkifn4vvl2vpq058fceubff.apps.googleusercontent.com',
+    iosClientId:
+        '828300936239-2rstuakmltkifn4vvl2vpq058fceubff.apps.googleusercontent.com',
     iosBundleId: 'com.example.finalProject',
   );
 
@@ -74,7 +75,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '828300936239',
     projectId: 'absolute-journal',
     storageBucket: 'absolute-journal.firebasestorage.app',
-    iosClientId: '828300936239-2rstuakmltkifn4vvl2vpq058fceubff.apps.googleusercontent.com',
+    iosClientId:
+        '828300936239-2rstuakmltkifn4vvl2vpq058fceubff.apps.googleusercontent.com',
     iosBundleId: 'com.example.finalProject',
   );
 
@@ -87,5 +89,4 @@ class DefaultFirebaseOptions {
     storageBucket: 'absolute-journal.firebasestorage.app',
     measurementId: 'G-E0Z1NKVD94',
   );
-
 }
