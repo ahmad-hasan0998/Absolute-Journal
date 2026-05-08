@@ -1,5 +1,6 @@
 class MediaItem {
   String? id;
+  int? tmdbId;
   String title;
   String type;
   String status;
@@ -12,8 +13,10 @@ class MediaItem {
   bool isTop5;
   String? posterUrl;
   int completedCount;
+
   MediaItem({
     this.id,
+    this.tmdbId,
     required this.title,
     required this.type,
     required this.status,
