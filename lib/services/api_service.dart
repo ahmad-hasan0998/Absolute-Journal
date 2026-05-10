@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:final_project/models/media_item.dart';
+
 class ApiService {
   static const String _tmdbKey = 'aafb295c383e755baf9065f43fc4bdd6';
+
   DateTime _parseSmartDate(String dateStr, String type) {
     DateTime baseDate = DateTime.parse(dateStr);
     if (type == 'Show') {
@@ -82,77 +84,95 @@ class ApiService {
     List<MediaItem> userItems,
   ) async {
     Map<int, List<Map<String, dynamic>>> schedule = {};
+    List<Future<void>> futures = [];
+
     for (var item in userItems) {
       if (item.tmdbId == null) continue;
-      try {
-        if (item.type == 'Movie') {
-          final res = await http.get(
-            Uri.parse(
-              'https://api.themoviedb.org/3/movie/${item.tmdbId}?api_key=$_tmdbKey',
-            ),
-          );
-          if (res.statusCode == 200) {
-            var data = json.decode(res.body);
-            String? rDate = data['release_date'];
-            if (rDate != null && rDate.isNotEmpty) {
-              DateTime dt = _parseSmartDate(rDate, 'Movie');
-              if (dt.year == year && dt.month == month) {
-                schedule.putIfAbsent(dt.day, () => []).add({
-                  'title': item.title,
-                  'posterUrl': item.posterUrl,
-                  'type': 'Movie',
-                });
-              }
-            }
-          }
-        } else if (item.type == 'Show') {
-          final res = await http.get(
-            Uri.parse(
-              'https://api.themoviedb.org/3/tv/${item.tmdbId}?api_key=$_tmdbKey',
-            ),
-          );
-          if (res.statusCode == 200) {
-            var data = json.decode(res.body);
-            List seasons = data['seasons'] ?? [];
-            for (var s in seasons) {
-              if (s['season_number'] == 0) continue;
-              String? sDate = s['air_date'];
-              if (sDate != null && sDate.isNotEmpty) {
-                DateTime sDt = _parseSmartDate(sDate, 'Show');
-                int monthDiff = (year - sDt.year) * 12 + (month - sDt.month);
-                if (monthDiff >= -2 && monthDiff <= 8) {
-                  final epRes = await http.get(
-                    Uri.parse(
-                      'https://api.themoviedb.org/3/tv/${item.tmdbId}/season/${s['season_number']}?api_key=$_tmdbKey',
-                    ),
-                  );
-                  if (epRes.statusCode == 200) {
-                    var epData = json.decode(epRes.body);
-                    List episodes = epData['episodes'] ?? [];
-                    for (var ep in episodes) {
-                      String? eDate = ep['air_date'];
-                      if (eDate != null && eDate.isNotEmpty) {
-                        DateTime eDt = _parseSmartDate(eDate, 'Show');
-                        if (eDt.year == year && eDt.month == month) {
-                          schedule.putIfAbsent(eDt.day, () => []).add({
-                            'title':
-                                '${item.title} \nS${s['season_number']} E${ep['episode_number']}',
-                            'posterUrl': item.posterUrl,
-                            'type': 'Show',
-                          });
-                        }
-                      }
-                    }
-                  }
+
+      futures.add(() async {
+        try {
+          if (item.type == 'Movie') {
+            final res = await http.get(
+              Uri.parse(
+                'https://api.themoviedb.org/3/movie/${item.tmdbId}?api_key=$_tmdbKey',
+              ),
+            );
+            if (res.statusCode == 200) {
+              var data = json.decode(res.body);
+              String? rDate = data['release_date'];
+              if (rDate != null && rDate.isNotEmpty) {
+                DateTime dt = _parseSmartDate(rDate, 'Movie');
+                if (dt.year == year && dt.month == month) {
+                  schedule.putIfAbsent(dt.day, () => []).add({
+                    'title': item.title,
+                    'posterUrl': item.posterUrl,
+                    'type': 'Movie',
+                  });
                 }
               }
             }
+          } else if (item.type == 'Show') {
+            final res = await http.get(
+              Uri.parse(
+                'https://api.themoviedb.org/3/tv/${item.tmdbId}?api_key=$_tmdbKey',
+              ),
+            );
+            if (res.statusCode == 200) {
+              var data = json.decode(res.body);
+
+              // MASSIVE OPTIMIZATION: If the show has officially concluded, skip fetching its seasons.
+              if (data['status'] == 'Ended' || data['status'] == 'Canceled')
+                return;
+
+              List seasons = data['seasons'] ?? [];
+              List<Future<void>> seasonFutures = [];
+
+              for (var s in seasons) {
+                if (s['season_number'] == 0) continue;
+                String? sDate = s['air_date'];
+                if (sDate != null && sDate.isNotEmpty) {
+                  DateTime sDt = _parseSmartDate(sDate, 'Show');
+                  int monthDiff = (year - sDt.year) * 12 + (month - sDt.month);
+
+                  if (monthDiff >= -2 && monthDiff <= 8) {
+                    seasonFutures.add(() async {
+                      final epRes = await http.get(
+                        Uri.parse(
+                          'https://api.themoviedb.org/3/tv/${item.tmdbId}/season/${s['season_number']}?api_key=$_tmdbKey',
+                        ),
+                      );
+                      if (epRes.statusCode == 200) {
+                        var epData = json.decode(epRes.body);
+                        List episodes = epData['episodes'] ?? [];
+                        for (var ep in episodes) {
+                          String? eDate = ep['air_date'];
+                          if (eDate != null && eDate.isNotEmpty) {
+                            DateTime eDt = _parseSmartDate(eDate, 'Show');
+                            if (eDt.year == year && eDt.month == month) {
+                              schedule.putIfAbsent(eDt.day, () => []).add({
+                                'title':
+                                    '${item.title} \nS${s['season_number']} E${ep['episode_number']}',
+                                'posterUrl': item.posterUrl,
+                                'type': 'Show',
+                              });
+                            }
+                          }
+                        }
+                      }
+                    }());
+                  }
+                }
+              }
+              await Future.wait(seasonFutures);
+            }
           }
+        } catch (e) {
+          print('Error fetching schedule for ${item.title}: $e');
         }
-      } catch (e) {
-        print('Error fetching schedule for ${item.title}: $e');
-      }
+      }());
     }
+
+    await Future.wait(futures);
     return schedule;
   }
 }

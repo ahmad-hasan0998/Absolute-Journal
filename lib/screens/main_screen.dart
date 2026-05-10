@@ -15,6 +15,7 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
+
   @override
   void initState() {
     super.initState();
@@ -60,18 +61,15 @@ class _MainScreenState extends State<MainScreen> {
             child: CircularProgressIndicator(color: Color(0xFFFF6B00)),
           );
         }
-        switch (_currentIndex) {
-          case 0:
-            return const DashboardScreen();
-          case 1:
-            return const ActivityScreen();
-          case 2:
-            return const ScheduleScreen();
-          case 3:
-            return const ProfileScreen();
-          default:
-            return const Center(child: Text('Error'));
-        }
+        return IndexedStack(
+          index: _currentIndex,
+          children: const [
+            DashboardScreen(),
+            ActivityScreen(),
+            ScheduleScreen(),
+            ProfileScreen(),
+          ],
+        );
       },
     );
   }
@@ -102,6 +100,8 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       extendBody: true,
+      // FIX: THIS LINE STOPS THE BOTTOM NAV FROM GETTING CRUSHED BY THE KEYBOARD
+      resizeToAvoidBottomInset: false,
       body: _buildBody(),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       floatingActionButton: SafeArea(

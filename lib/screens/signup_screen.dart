@@ -14,6 +14,7 @@ class _SignupScreenState extends State<SignupScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _isLoading = false;
+  bool _obscurePassword = true; // Added state for password visibility
 
   void _showModernSnackbar(String message, bool isError) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -56,6 +57,7 @@ class _SignupScreenState extends State<SignupScreen> {
     setState(() {
       _isLoading = true;
     });
+
     try {
       var user = await AuthService().signUpWithEmail(
         _emailController.text.trim(),
@@ -63,6 +65,7 @@ class _SignupScreenState extends State<SignupScreen> {
         _profileNameController.text.trim(),
         _usernameController.text.trim().toLowerCase(),
       );
+
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -106,11 +109,27 @@ class _SignupScreenState extends State<SignupScreen> {
       ),
       child: TextField(
         controller: controller,
-        obscureText: isPassword,
+        obscureText: isPassword ? _obscurePassword : false,
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: TextStyle(color: Colors.grey[400]),
           prefixIcon: Icon(icon, color: const Color(0xFF0A2463)),
+          // Added the toggle button for password
+          suffixIcon: isPassword
+              ? IconButton(
+                  icon: Icon(
+                    _obscurePassword
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                    color: Colors.grey[400],
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _obscurePassword = !_obscurePassword;
+                    });
+                  },
+                )
+              : null,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(20),
             borderSide: BorderSide.none,
@@ -150,14 +169,15 @@ class _SignupScreenState extends State<SignupScreen> {
                 ),
               ),
               const SizedBox(height: 40),
+              // Shortened hint texts to prevent truncation
               _buildShadowedInput(
-                hint: 'Profile Name (e.g. Ahmad Hasan)',
+                hint: 'Profile Name',
                 icon: Icons.badge_outlined,
                 controller: _profileNameController,
               ),
               const SizedBox(height: 20),
               _buildShadowedInput(
-                hint: 'Username (e.g. ahmad_h)',
+                hint: 'Username',
                 icon: Icons.alternate_email_rounded,
                 controller: _usernameController,
               ),

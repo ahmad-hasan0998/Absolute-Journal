@@ -267,7 +267,9 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: const Color(0xFFFF6B00).withValues(alpha: 0.3),
+                                color: const Color(
+                                  0xFFFF6B00,
+                                ).withValues(alpha: 0.3),
                                 blurRadius: 15,
                                 offset: const Offset(0, 5),
                               ),
@@ -407,21 +409,26 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                               topMediaList.sort(
                                 (a, b) => a.top5Order.compareTo(b.top5Order),
                               );
-
                               return Column(
                                 children: [
                                   Row(
                                     mainAxisAlignment:
                                         MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text(
-                                        '$friendProfileName\'s Top 5',
-                                        style: const TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.w900,
-                                          color: Color(0xFF0A2463),
+                                      // Fix: Wrapped the text in Expanded to prevent overflow
+                                      Expanded(
+                                        child: Text(
+                                          '$friendProfileName\'s Top 5',
+                                          style: const TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w900,
+                                            color: Color(0xFF0A2463),
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
+                                      const SizedBox(width: 12),
                                       Container(
                                         padding: const EdgeInsets.all(4),
                                         decoration: BoxDecoration(
@@ -453,8 +460,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                                                       ? [
                                                           BoxShadow(
                                                             color: Colors.black
-                                                                .withValues(alpha: 
-                                                                  0.1,
+                                                                .withValues(
+                                                                  alpha: 0.1,
                                                                 ),
                                                             blurRadius: 4,
                                                           ),
@@ -491,8 +498,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                                                       ? [
                                                           BoxShadow(
                                                             color: Colors.black
-                                                                .withValues(alpha: 
-                                                                  0.1,
+                                                                .withValues(
+                                                                  alpha: 0.1,
                                                                 ),
                                                             blurRadius: 4,
                                                           ),
@@ -768,11 +775,9 @@ class _FriendCompletedMediaScreenState
     extends State<FriendCompletedMediaScreen> {
   String _typeFilter = 'All';
   String _ratingFilter = 'All';
-
   @override
   Widget build(BuildContext context) {
     var displayItems = widget.items;
-
     // Apply Type Filter
     if (_typeFilter == 'Movies') {
       displayItems = displayItems.where((i) => i.type == 'Movie').toList();

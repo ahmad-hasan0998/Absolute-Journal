@@ -503,25 +503,6 @@ class DatabaseService {
     return lastMonthXps.indexOf(targetXp) + 1;
   }
 
-  // --- DEBUG METHODS ---
-  Future<void> debugSetLastActivity(int daysAgo) async {
-    final uid = currentUserId;
-    if (uid == null) return;
-    DateTime past = DateTime.now().subtract(Duration(days: daysAgo));
-    await _db.collection('users').doc(uid).update({
-      'last_activity_date': Timestamp.fromDate(past),
-    });
-  }
-
-  Future<void> debugSetLastReset(int daysAgo) async {
-    final uid = currentUserId;
-    if (uid == null) return;
-    DateTime past = DateTime.now().subtract(Duration(days: daysAgo));
-    await _db.collection('users').doc(uid).update({
-      'last_reset_date': Timestamp.fromDate(past),
-    });
-  }
-
   Future<void> addXP(int amount) async {
     final uid = currentUserId;
     if (uid == null) return;

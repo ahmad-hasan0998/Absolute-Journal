@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:final_project/services/seed_service.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
@@ -25,7 +24,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final TextEditingController _searchController = TextEditingController();
   List<Map<String, dynamic>> _userSearchResults = [];
   bool _isSearching = false;
-  Timer? _debounce; // ADDED DEBOUNCE TIMER
+  Timer? _debounce;
 
   ImageProvider? _getAvatarProvider(String? pic) {
     if (pic == null || pic.isEmpty) return null;
@@ -54,122 +53,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       height: size,
       errorWidget: (context, url, error) =>
           Icon(Icons.person, color: Colors.white, size: size / 2),
-    );
-  }
-
-  void _showDebugMenu() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text(
-          'Admin Console',
-          style: TextStyle(
-            color: Color(0xFF0A2463),
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              title: const Text(
-                'Simulate Yesterday (Streak)',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-              leading: const Icon(
-                Icons.history_rounded,
-                color: Color(0xFFFF6B00),
-              ),
-              onTap: () async {
-                await locator<DatabaseService>().debugSetLastActivity(1);
-                if (mounted) Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              title: const Text(
-                'Simulate Decay',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-              leading: const Icon(
-                Icons.trending_down_rounded,
-                color: Colors.orange,
-              ),
-              onTap: () async {
-                await locator<DatabaseService>().debugSetLastActivity(4);
-                if (mounted) Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              title: const Text(
-                'Simulate Month Reset',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-              leading: const Icon(
-                Icons.calendar_month_rounded,
-                color: Color(0xFF0A2463),
-              ),
-              onTap: () async {
-                await locator<DatabaseService>().debugSetLastReset(35);
-                if (mounted) Navigator.pop(context);
-              },
-            ),
-            const Divider(),
-            ListTile(
-              title: const Text(
-                'Force Gamification Sync',
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  color: Colors.green,
-                ),
-              ),
-              leading: const Icon(Icons.sync_rounded, color: Colors.green),
-              onTap: () async {
-                await locator<DatabaseService>().syncGamification();
-                if (mounted) Navigator.pop(context);
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('Sync complete!')));
-              },
-            ),
-            const Divider(),
-            ListTile(
-              title: const Text(
-                'Inject 5 Dummy Users',
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  color: Colors.redAccent,
-                ),
-              ),
-              leading: const Icon(
-                Icons.people_alt_rounded,
-                color: Colors.redAccent,
-              ),
-              onTap: () async {
-                Navigator.pop(context);
-                showDialog(
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (_) => const Center(
-                    child: CircularProgressIndicator(color: Colors.redAccent),
-                  ),
-                );
-                await SeedService.injectDummyData();
-                if (mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        '5 Dummy Users Injected! Go search for them.',
-                      ),
-                    ),
-                  );
-                }
-              },
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -225,7 +108,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           return;
                         }
 
-                        // DEBOUNCE LOGIC FOR SEARCH AS YOU TYPE
                         if (_debounce?.isActive ?? false) _debounce!.cancel();
                         _debounce = Timer(
                           const Duration(milliseconds: 500),
@@ -307,6 +189,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   u['rank'] ?? 'Iron Novice',
                                 );
                                 return ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 0,
+                                  ),
                                   leading: CircleAvatar(
                                     backgroundColor: const Color(0xFF0A2463),
                                     child: ClipOval(
@@ -318,41 +203,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: Color(0xFF0A2463),
+                                      fontSize: 14,
                                     ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  subtitle: Row(
+                                  subtitle: Wrap(
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    spacing: 4,
+                                    runSpacing: 4,
                                     children: [
                                       Text(
                                         '@$uName',
                                         style: const TextStyle(
                                           color: Colors.black54,
-                                          fontSize: 12,
+                                          fontSize: 10,
                                         ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
-                                      const SizedBox(width: 8),
                                       Icon(
                                         rankData['icon'],
                                         color: rankData['color'],
-                                        size: 14,
+                                        size: 10,
                                       ),
-                                      const SizedBox(width: 4),
                                       Text(
                                         '${u['xp_score']} XP',
                                         style: TextStyle(
                                           color: rankData['color'],
                                           fontWeight: FontWeight.bold,
-                                          fontSize: 12,
+                                          fontSize: 10,
                                         ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ],
                                   ),
-                                  trailing: TextButton(
-                                    style: TextButton.styleFrom(
-                                      backgroundColor: isAdded
-                                          ? Colors.grey[200]
-                                          : const Color(0xFF0A2463),
-                                    ),
-                                    onPressed: () async {
+                                  trailing: GestureDetector(
+                                    onTap: () async {
                                       await locator<DatabaseService>()
                                           .toggleFriend(u['uid'], !isAdded);
                                       setDialogState(() {
@@ -369,13 +258,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       });
                                       setState(() {});
                                     },
-                                    child: Text(
-                                      isAdded ? 'Remove' : 'Add',
-                                      style: TextStyle(
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 8,
+                                      ),
+                                      decoration: BoxDecoration(
                                         color: isAdded
-                                            ? Colors.black54
-                                            : Colors.white,
-                                        fontWeight: FontWeight.bold,
+                                            ? Colors.grey[200]
+                                            : const Color(0xFF0A2463),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Text(
+                                        isAdded ? 'Remove' : 'Add',
+                                        style: TextStyle(
+                                          color: isAdded
+                                              ? Colors.black54
+                                              : Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 11,
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -502,7 +404,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   ) {
     MediaItem? item = index < topMediaList.length ? topMediaList[index] : null;
     double slotWidth = MediaQuery.of(context).size.width * 0.23;
-
     Widget slotContent = Container(
       width: slotWidth,
       height: slotWidth * 1.5,
@@ -535,7 +436,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
     );
-
     return DragTarget<int>(
       onAcceptWithDetails: (details) {
         context.read<JournalProvider>().reorderTop5(details.data, index);
@@ -550,6 +450,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 barrierColor: Colors.black.withValues(alpha: 0.6),
                 builder: (context) => SearchApiDialog(
                   isForTop5: true,
+                  initialCategory: _top5Filter,
                   onItemAdded: (newItem) async {
                     newItem.type = _top5Filter;
                     await context.read<JournalProvider>().addMedia(newItem);
@@ -605,9 +506,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final activeItems = context.watch<JournalProvider>().activeItems;
-
     return Scaffold(
       backgroundColor: const Color(0xFFF0F4F8),
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: const Text(
           'Profile',
@@ -620,13 +521,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
-          IconButton(
-            icon: const Icon(
-              Icons.bug_report_rounded,
-              color: Color(0xFF0A2463),
-            ),
-            onPressed: _showDebugMenu,
-          ),
           StreamBuilder<DocumentSnapshot>(
             stream: locator<DatabaseService>().getUserProfileStream(),
             builder: (context, snapshot) {
@@ -653,7 +547,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
       endDrawer: Padding(
-        padding: const EdgeInsets.only(bottom: 90.0, top: 20.0),
+        padding: const EdgeInsets.only(bottom: 120.0, top: 20.0),
         child: Drawer(
           backgroundColor: Colors.white,
           shape: const RoundedRectangleBorder(
@@ -764,9 +658,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           int streak = userData['streak'] ?? 0;
           String? profileUrl = userData['profileUrl'];
           var rankData = DatabaseService.getRankVisuals(rank);
-
           return SingleChildScrollView(
-            padding: const EdgeInsets.only(bottom: 120),
+            padding: const EdgeInsets.only(bottom: 160),
             child: Column(
               children: [
                 const SizedBox(height: 16),
@@ -785,7 +678,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: const Color(0xFFFF6B00).withValues(alpha: 0.3),
+                              color: const Color(
+                                0xFFFF6B00,
+                              ).withValues(alpha: 0.3),
                               blurRadius: 15,
                               offset: const Offset(0, 5),
                             ),
@@ -940,7 +835,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       topMediaList.sort(
                         (a, b) => a.top5Order.compareTo(b.top5Order),
                       );
-
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [

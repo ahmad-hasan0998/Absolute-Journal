@@ -5,10 +5,120 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:final_project/models/history_log.dart';
+import 'package:final_project/models/media_item.dart';
 import 'package:final_project/providers/journal_provider.dart';
 import 'package:final_project/services/database_service.dart';
 import 'package:final_project/locator.dart';
 import 'package:final_project/screens/friend_profile_screen.dart';
+
+// --- TOP LEVEL HELPERS ---
+
+/// Groups duplicate media items together and combines their completion counts
+List<MediaItem> getGroupedCompletedItems(List<MediaItem> rawItems) {
+  Map<String, MediaItem> grouped = {};
+  for (var item in rawItems) {
+    if (item.completedCount > 0 || item.status == 'Completed') {
+      String key = item.tmdbId?.toString() ?? item.title;
+      if (grouped.containsKey(key)) {
+        // Increment the counter of the existing grouped item
+        int addition = item.completedCount > 0 ? item.completedCount : 1;
+        grouped[key]!.completedCount += addition;
+
+        // Use the most recent timestamp
+        if (item.timestamp != null && grouped[key]!.timestamp != null) {
+          if (item.timestamp!.isAfter(grouped[key]!.timestamp!)) {
+            grouped[key]!.timestamp = item.timestamp;
+          }
+        }
+      } else {
+        // Clone the item so we don't accidentally mutate the active provider state
+        grouped[key] = MediaItem(
+          id: item.id,
+          tmdbId: item.tmdbId,
+          title: item.title,
+          type: item.type,
+          status: item.status,
+          progress: item.progress,
+          total: item.total,
+          lastUpdated: item.lastUpdated,
+          timestamp: item.timestamp,
+          posterUrl: item.posterUrl,
+          completedCount: item.completedCount > 0 ? item.completedCount : 1,
+          isLiked: item.isLiked,
+        );
+      }
+    }
+  }
+  var list = grouped.values.toList();
+  list.sort((a, b) => (b.timestamp ?? DateTime.now()).compareTo(a.timestamp ?? DateTime.now()));
+  return list;
+}
+
+/// Universal dialog to allow users to replay a completed game/movie
+void showReplayDialog(BuildContext context, MediaItem item) {
+  showDialog(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text(
+        'Replay "${item.title}"?',
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Color(0xFF0A2463),
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+      content: const Text(
+        'Do you want to add this media back to your Dashboard to track a new playthrough or rewatch?',
+        textAlign: TextAlign.center,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      actionsAlignment: MainAxisAlignment.center,
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: const Text('Cancel', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFFFF6B00),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          ),
+          onPressed: () {
+            var provider = context.read<JournalProvider>();
+            // Find the original item to update
+            var originalIndex = provider.activeItems.indexWhere((i) => i.id == item.id);
+
+            if (originalIndex != -1) {
+              var originalItem = provider.activeItems[originalIndex];
+              originalItem.status = 'Active';
+              originalItem.progress = 0;
+              provider.updateExistingMedia(originalItem);
+            } else {
+              // Fallback if ID is missing
+              item.status = 'Active';
+              item.progress = 0;
+              item.completedCount = 0;
+              provider.addMedia(item);
+            }
+
+            Navigator.pop(dialogContext);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('${item.title} added to Dashboard!'),
+                backgroundColor: const Color(0xFF0A2463),
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              ),
+            );
+          },
+          child: const Text('Replay', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        ),
+      ],
+    ),
+  );
+}
+
+// --- SCREENS ---
 
 class ActivityScreen extends StatelessWidget {
   const ActivityScreen({super.key});
@@ -22,10 +132,10 @@ class ActivityScreen extends StatelessWidget {
   }
 
   void _showRankInfoDialog(
-    BuildContext context,
-    int currentXp,
-    String currentRank,
-  ) {
+      BuildContext context,
+      int currentXp,
+      String currentRank,
+      ) {
     final List<Map<String, dynamic>> ranks = [
       {
         'name': 'Iron Novice',
@@ -121,7 +231,7 @@ class ActivityScreen extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          '🎯 The Rules',
+                          '📜 The Rules',
                           style: TextStyle(
                             fontWeight: FontWeight.w900,
                             color: Color(0xFF0A2463),
@@ -173,7 +283,6 @@ class ActivityScreen extends StatelessWidget {
                     final IconData rIcon = r['icon'] as IconData;
                     final Color rColor = r['color'] as Color;
                     final bool isCurrent = rName == currentRank;
-
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
                       padding: const EdgeInsets.all(16),
@@ -280,17 +389,17 @@ class ActivityScreen extends StatelessWidget {
   }
 
   Widget _buildStatCard(
-    String title,
-    String value,
-    IconData icon,
-    Color color,
-    VoidCallback onTap,
-  ) {
+      String title,
+      String value,
+      IconData icon,
+      Color color,
+      VoidCallback onTap,
+      ) {
     return Expanded(
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(24),
@@ -313,12 +422,14 @@ class ActivityScreen extends StatelessWidget {
                   fontWeight: FontWeight.w900,
                   color: color,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 4),
               Text(
                 title,
                 style: const TextStyle(
-                  fontSize: 12,
+                  fontSize: 10,
                   fontWeight: FontWeight.bold,
                   color: Colors.black45,
                 ),
@@ -336,9 +447,9 @@ class ActivityScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final allItems = context.watch<JournalProvider>().activeItems;
-    final completedItems = allItems
-        .where((item) => item.completedCount > 0)
-        .toList();
+    // FIX: Using the new grouping function to aggregate duplicated entries
+    final completedItems = getGroupedCompletedItems(allItems);
+
     int totalMovies = completedItems
         .where((i) => i.type == 'Movie')
         .fold<int>(0, (sum, item) => sum + item.completedCount);
@@ -369,9 +480,10 @@ class ActivityScreen extends StatelessWidget {
                 indicatorColor: Color(0xFFFF6B00),
                 indicatorWeight: 4,
                 labelColor: Color(0xFF0A2463),
+                labelPadding: EdgeInsets.symmetric(horizontal: 4),
                 labelStyle: TextStyle(
                   fontWeight: FontWeight.w900,
-                  fontSize: 14,
+                  fontSize: 13,
                 ),
                 unselectedLabelColor: Colors.black38,
                 tabs: [
@@ -408,7 +520,7 @@ class ActivityScreen extends StatelessWidget {
                                   totalMovies.toString(),
                                   Icons.movie_rounded,
                                   const Color(0xFF0A2463),
-                                  () => Navigator.push(
+                                      () => Navigator.push(
                                     context,
                                     MaterialPageRoute(
                                       builder: (_) => const HistoryScreen(
@@ -417,13 +529,13 @@ class ActivityScreen extends StatelessWidget {
                                     ),
                                   ),
                                 ),
-                                const SizedBox(width: 16),
+                                const SizedBox(width: 12),
                                 _buildStatCard(
                                   'Shows',
                                   totalShows.toString(),
                                   Icons.tv_rounded,
                                   const Color(0xFFFF6B00),
-                                  () => Navigator.push(
+                                      () => Navigator.push(
                                     context,
                                     MaterialPageRoute(
                                       builder: (_) => const HistoryScreen(
@@ -432,13 +544,13 @@ class ActivityScreen extends StatelessWidget {
                                     ),
                                   ),
                                 ),
-                                const SizedBox(width: 16),
+                                const SizedBox(width: 12),
                                 _buildStatCard(
                                   rank,
                                   xpScore.toString(),
                                   rankData['icon'],
                                   rankData['color'],
-                                  () => _showRankInfoDialog(
+                                      () => _showRankInfoDialog(
                                     context,
                                     xpScore,
                                     rank,
@@ -494,7 +606,7 @@ class ActivityScreen extends StatelessWidget {
                                     context,
                                     MaterialPageRoute(
                                       builder: (_) =>
-                                          const CompletedMediaScreen(),
+                                      const CompletedMediaScreen(),
                                     ),
                                   ),
                                   child: const Text(
@@ -513,135 +625,132 @@ class ActivityScreen extends StatelessWidget {
                     ),
                     completedItems.isEmpty
                         ? const SliverToBoxAdapter(
-                            child: Padding(
-                              padding: EdgeInsets.only(top: 40),
-                              child: Center(
-                                child: Text(
-                                  "You haven't completed anything yet.",
-                                  style: TextStyle(
-                                    color: Colors.black38,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          )
-                        : SliverPadding(
-                            padding: const EdgeInsets.only(
-                              left: 24,
-                              right: 24,
-                              bottom: 120,
-                            ),
-                            sliver: SliverGrid(
-                              gridDelegate:
-                                  const SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: 4,
-                                    childAspectRatio: 0.65,
-                                    crossAxisSpacing: 12,
-                                    mainAxisSpacing: 12,
-                                  ),
-                              delegate: SliverChildBuilderDelegate(
-                                (context, index) {
-                                  final item = completedItems
-                                      .take(4)
-                                      .toList()[index];
-                                  return Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Expanded(
-                                        child: Stack(
-                                          clipBehavior: Clip.none,
-                                          children: [
-                                            Container(
-                                              decoration: BoxDecoration(
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                                boxShadow: [
-                                                  BoxShadow(
-                                                    color: Colors.black
-                                                        .withValues(alpha: 0.1),
-                                                    blurRadius: 10,
-                                                    offset: const Offset(0, 5),
-                                                  ),
-                                                ],
-                                                color: Colors.grey[200],
-                                              ),
-                                              child: item.posterUrl == null
-                                                  ? const Center(
-                                                      child: Icon(
-                                                        Icons.movie,
-                                                        color: Colors.white54,
-                                                      ),
-                                                    )
-                                                  : ClipRRect(
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            12,
-                                                          ),
-                                                      child: CachedNetworkImage(
-                                                        imageUrl:
-                                                            item.posterUrl!,
-                                                        fit: BoxFit.cover,
-                                                      ),
-                                                    ),
-                                            ),
-                                            if (item.completedCount > 1)
-                                              Positioned(
-                                                top: -6,
-                                                right: -6,
-                                                child: Container(
-                                                  padding: const EdgeInsets.all(
-                                                    4,
-                                                  ),
-                                                  decoration: BoxDecoration(
-                                                    gradient:
-                                                        const LinearGradient(
-                                                          colors: [
-                                                            Color(0xFFFF6B00),
-                                                            Color(0xFFFFC300),
-                                                          ],
-                                                        ),
-                                                    shape: BoxShape.circle,
-                                                    border: Border.all(
-                                                      color: Colors.white,
-                                                      width: 2,
-                                                    ),
-                                                  ),
-                                                  child: Text(
-                                                    'x${item.completedCount}',
-                                                    style: const TextStyle(
-                                                      color: Colors.white,
-                                                      fontWeight:
-                                                          FontWeight.w900,
-                                                      fontSize: 8,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        item.title,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 11,
-                                          color: Color(0xFF0A2463),
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                  );
-                                },
-                                childCount: completedItems.length > 4
-                                    ? 4
-                                    : completedItems.length,
-                              ),
+                      child: Padding(
+                        padding: EdgeInsets.only(top: 40),
+                        child: Center(
+                          child: Text(
+                            "You haven't completed anything yet.",
+                            style: TextStyle(
+                              color: Colors.black38,
+                              fontSize: 16,
                             ),
                           ),
+                        ),
+                      ),
+                    )
+                        : SliverPadding(
+                      padding: const EdgeInsets.only(
+                        left: 24,
+                        right: 24,
+                        bottom: 160,
+                      ),
+                      sliver: SliverGrid(
+                        gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 4,
+                          childAspectRatio: 0.65,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                        ),
+                        delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                            final item = completedItems
+                                .take(4)
+                                .toList()[index];
+
+                            // FIX: Wrapped preview in a GestureDetector to trigger Replay
+                            return GestureDetector(
+                              onTap: () => showReplayDialog(context, item),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Stack(
+                                      clipBehavior: Clip.none,
+                                      children: [
+                                        Container(
+                                          decoration: BoxDecoration(
+                                            borderRadius:
+                                            BorderRadius.circular(12),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.black
+                                                    .withValues(alpha: 0.1),
+                                                blurRadius: 10,
+                                                offset: const Offset(0, 5),
+                                              ),
+                                            ],
+                                            color: Colors.grey[200],
+                                          ),
+                                          child: item.posterUrl == null
+                                              ? const Center(
+                                            child: Icon(
+                                              Icons.movie,
+                                              color: Colors.white54,
+                                            ),
+                                          )
+                                              : ClipRRect(
+                                            borderRadius:
+                                            BorderRadius.circular(12),
+                                            child: CachedNetworkImage(
+                                              imageUrl: item.posterUrl!,
+                                              fit: BoxFit.cover,
+                                            ),
+                                          ),
+                                        ),
+                                        if (item.completedCount > 1)
+                                          Positioned(
+                                            top: -6,
+                                            right: -6,
+                                            child: Container(
+                                              padding: const EdgeInsets.all(4),
+                                              decoration: BoxDecoration(
+                                                gradient: const LinearGradient(
+                                                  colors: [
+                                                    Color(0xFFFF6B00),
+                                                    Color(0xFFFFC300),
+                                                  ],
+                                                ),
+                                                shape: BoxShape.circle,
+                                                border: Border.all(
+                                                  color: Colors.white,
+                                                  width: 2,
+                                                ),
+                                              ),
+                                              child: Text(
+                                                'x${item.completedCount}',
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.w900,
+                                                  fontSize: 8,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    item.title,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 11,
+                                      color: Color(0xFF0A2463),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                          childCount: completedItems.length > 4
+                              ? 4
+                              : completedItems.length,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
 
@@ -651,6 +760,9 @@ class ActivityScreen extends StatelessWidget {
                     friendsList,
                   ),
                   builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)));
+                    }
                     if (!snapshot.hasData) {
                       return const Center(
                         child: CircularProgressIndicator(
@@ -660,29 +772,26 @@ class ActivityScreen extends StatelessWidget {
                     }
                     var users = snapshot.data!;
                     return ListView.builder(
-                      padding: const EdgeInsets.only(top: 16, bottom: 0),
+                      padding: const EdgeInsets.only(top: 16, bottom: 160),
                       itemCount: users.length + 1,
                       itemBuilder: (context, index) {
                         if (index == users.length) {
                           final lastMonthTop3 =
-                              List<Map<String, dynamic>>.from(users)..sort(
+                          List<Map<String, dynamic>>.from(users)..sort(
                                 (a, b) => (a['prev_rank'] ?? 999).compareTo(
-                                  b['prev_rank'] ?? 999,
-                                ),
-                              );
+                              b['prev_rank'] ?? 999,
+                            ),
+                          );
                           final top3 = lastMonthTop3
                               .where(
                                 (u) =>
-                                    u['prev_rank'] != null &&
-                                    u['prev_rank'] <= 3,
-                              )
+                            u['prev_rank'] != null &&
+                                u['prev_rank'] <= 3,
+                          )
                               .toList();
-                          if (top3.isEmpty) return const SizedBox(height: 120);
+                          if (top3.isEmpty) return const SizedBox.shrink();
                           return Padding(
-                            padding: const EdgeInsets.only(
-                              top: 32,
-                              bottom: 120,
-                            ),
+                            padding: const EdgeInsets.only(top: 32, bottom: 24),
                             child: Column(
                               children: [
                                 const Text(
@@ -700,17 +809,13 @@ class ActivityScreen extends StatelessWidget {
                                   Color badgeColor = pRank == 1
                                       ? const Color(0xFFFFC300)
                                       : (pRank == 2
-                                            ? const Color(0xFFBDBDBD)
-                                            : const Color(0xFF8D6E63));
+                                      ? const Color(0xFFBDBDBD)
+                                      : const Color(0xFF8D6E63));
                                   Color textColor = pRank == 2
                                       ? const Color(0xFF757575)
                                       : badgeColor;
-                                  String pName =
-                                      u['profileName'] ??
-                                      u['username'] ??
-                                      'Unknown User';
+                                  String pName = u['profileName'] ?? u['username'] ?? 'Unknown User';
                                   String uName = u['username'] ?? 'unknown';
-
                                   return Container(
                                     margin: const EdgeInsets.symmetric(
                                       horizontal: 24,
@@ -736,13 +841,17 @@ class ActivityScreen extends StatelessWidget {
                                           fontWeight: FontWeight.bold,
                                           color: textColor,
                                         ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                       subtitle: Text(
                                         '@$uName',
                                         style: TextStyle(
                                           color: textColor.withValues(alpha: 0.7),
-                                          fontSize: 11,
+                                          fontSize: 10,
                                         ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                       trailing: Text(
                                         '${u['last_month_xp'] ?? 0} XP',
@@ -759,18 +868,10 @@ class ActivityScreen extends StatelessWidget {
                           );
                         }
                         var user = users[index];
-                        bool isMe =
-                            user['uid'] ==
-                            locator<DatabaseService>().currentUserId;
-                        var uRankData = DatabaseService.getRankVisuals(
-                          user['rank'] ?? 'Iron Novice',
-                        );
-                        String pName =
-                            user['profileName'] ??
-                            user['username'] ??
-                            'Unknown User';
+                        bool isMe = user['uid'] == locator<DatabaseService>().currentUserId;
+                        var uRankData = DatabaseService.getRankVisuals(user['rank'] ?? 'Iron Novice');
+                        String pName = user['profileName'] ?? user['username'] ?? 'Unknown User';
                         String uName = user['username'] ?? 'unknown';
-
                         return GestureDetector(
                           onTap: () {
                             if (!isMe) {
@@ -784,29 +885,23 @@ class ActivityScreen extends StatelessWidget {
                             }
                           },
                           child: Container(
-                            margin: const EdgeInsets.symmetric(
-                              horizontal: 24,
-                              vertical: 8,
-                            ),
+                            margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
                             decoration: BoxDecoration(
                               color: isMe
                                   ? const Color(0xFFFF6B00).withValues(alpha: 0.1)
                                   : Colors.white,
                               borderRadius: BorderRadius.circular(16),
                               border: isMe
-                                  ? Border.all(
-                                      color: const Color(0xFFFF6B00),
-                                      width: 2,
-                                    )
+                                  ? Border.all(color: const Color(0xFFFF6B00), width: 2)
                                   : null,
                               boxShadow: !isMe
                                   ? [
-                                      BoxShadow(
-                                        color: Colors.black.withValues(alpha: 0.04),
-                                        blurRadius: 10,
-                                        offset: const Offset(0, 4),
-                                      ),
-                                    ]
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.04),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ]
                                   : [],
                             ),
                             child: ListTile(
@@ -815,9 +910,7 @@ class ActivityScreen extends StatelessWidget {
                                 style: TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.w900,
-                                  color: isMe
-                                      ? const Color(0xFFFF6B00)
-                                      : Colors.black26,
+                                  color: isMe ? const Color(0xFFFF6B00) : Colors.black26,
                                 ),
                               ),
                               title: Row(
@@ -828,49 +921,54 @@ class ActivityScreen extends StatelessWidget {
                                       style: const TextStyle(
                                         fontWeight: FontWeight.bold,
                                         color: Color(0xFF0A2463),
+                                        fontSize: 14,
                                       ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
-                                  if (user['prev_rank'] != null &&
-                                      user['prev_rank'] <= 3) ...[
+                                  if (user['prev_rank'] != null && user['prev_rank'] <= 3) ...[
                                     const SizedBox(width: 6),
                                     Icon(
                                       Icons.workspace_premium_rounded,
-                                      size: 18,
+                                      size: 16,
                                       color: user['prev_rank'] == 1
                                           ? const Color(0xFFFFC300)
                                           : (user['prev_rank'] == 2
-                                                ? const Color(0xFFBDBDBD)
-                                                : const Color(0xFF8D6E63)),
+                                          ? const Color(0xFFBDBDBD)
+                                          : const Color(0xFF8D6E63)),
                                     ),
                                   ],
                                 ],
                               ),
-                              subtitle: Row(
+                              subtitle: Wrap(
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: 4,
+                                runSpacing: 4,
                                 children: [
                                   Text(
                                     '@$uName',
                                     style: const TextStyle(
                                       color: Colors.black54,
-                                      fontSize: 11,
+                                      fontSize: 10,
                                     ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  const SizedBox(width: 8),
                                   Icon(
                                     uRankData['icon'],
                                     color: uRankData['color'],
-                                    size: 14,
+                                    size: 12,
                                   ),
-                                  const SizedBox(width: 4),
                                   Text(
                                     user['rank'] ?? '',
                                     style: TextStyle(
                                       color: uRankData['color'],
                                       fontWeight: FontWeight.bold,
-                                      fontSize: 11,
+                                      fontSize: 10,
                                     ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ],
                               ),
@@ -879,6 +977,7 @@ class ActivityScreen extends StatelessWidget {
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w900,
                                   color: Color(0xFFFFC300),
+                                  fontSize: 12,
                                 ),
                               ),
                             ),
@@ -891,15 +990,23 @@ class ActivityScreen extends StatelessWidget {
 
                 // FEED TAB
                 FutureBuilder<List<Map<String, dynamic>>>(
-                  future: locator<DatabaseService>().getFriendsFeed(
-                    friendsList,
-                  ),
+                  future: locator<DatabaseService>().getFriendsFeed(friendsList),
                   builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24.0),
+                          child: Text(
+                            'Could not load feed. Check Firestore Security Rules.\n\nError: ${snapshot.error}',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      );
+                    }
                     if (!snapshot.hasData) {
                       return const Center(
-                        child: CircularProgressIndicator(
-                          color: Color(0xFFFF6B00),
-                        ),
+                        child: CircularProgressIndicator(color: Color(0xFFFF6B00)),
                       );
                     }
                     var feed = snapshot.data!;
@@ -907,15 +1014,12 @@ class ActivityScreen extends StatelessWidget {
                       return const Center(
                         child: Text(
                           "Add friends to see their activity here!",
-                          style: TextStyle(
-                            color: Colors.black45,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: TextStyle(color: Colors.black45, fontWeight: FontWeight.bold),
                         ),
                       );
                     }
                     return ListView.builder(
-                      padding: const EdgeInsets.only(top: 16, bottom: 120),
+                      padding: const EdgeInsets.only(top: 16, bottom: 160),
                       itemCount: feed.length,
                       itemBuilder: (context, index) {
                         var post = feed[index];
@@ -924,7 +1028,7 @@ class ActivityScreen extends StatelessWidget {
                             horizontal: 24,
                             vertical: 12,
                           ),
-                          padding: const EdgeInsets.all(20),
+                          padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(32),
@@ -944,18 +1048,27 @@ class ActivityScreen extends StatelessWidget {
                                 decoration: BoxDecoration(
                                   color: Colors.grey[200],
                                   borderRadius: BorderRadius.circular(12),
-                                  image: post['posterUrl'] != null
-                                      ? DecorationImage(
-                                          image: NetworkImage(
-                                            post['posterUrl'],
-                                          ),
-                                          fit: BoxFit.cover,
-                                        )
-                                      : null,
+                                ),
+                                child: post['posterUrl'] != null && post['posterUrl'].toString().isNotEmpty
+                                    ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: CachedNetworkImage(
+                                    imageUrl: post['posterUrl'],
+                                    fit: BoxFit.cover,
+                                    errorWidget: (context, url, error) => const Icon(
+                                      Icons.broken_image_rounded,
+                                      color: Colors.black26,
+                                    ),
+                                  ),
+                                )
+                                    : const Icon(
+                                  Icons.movie_rounded,
+                                  color: Colors.black26,
                                 ),
                               ),
-                              const SizedBox(width: 16),
+                              const SizedBox(width: 12),
                               Expanded(
+                                flex: 7,
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
@@ -963,10 +1076,10 @@ class ActivityScreen extends StatelessWidget {
                                       post['title'] ?? 'Unknown',
                                       style: const TextStyle(
                                         fontWeight: FontWeight.w900,
-                                        fontSize: 16,
+                                        fontSize: 14,
                                         color: Color(0xFF0A2463),
                                       ),
-                                      maxLines: 2,
+                                      maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                     const SizedBox(height: 4),
@@ -980,12 +1093,16 @@ class ActivityScreen extends StatelessWidget {
                                           color: Colors.black45,
                                         ),
                                         const SizedBox(width: 4),
-                                        Text(
-                                          'Watched • ${post['lastUpdated']}',
-                                          style: const TextStyle(
-                                            color: Colors.black45,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
+                                        Flexible(
+                                          child: Text(
+                                            'Watched • ${post['lastUpdated']}',
+                                            style: const TextStyle(
+                                              color: Colors.black45,
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
                                       ],
@@ -993,57 +1110,65 @@ class ActivityScreen extends StatelessWidget {
                                   ],
                                 ),
                               ),
-                              const SizedBox(width: 12),
-                              GestureDetector(
-                                onTap: () {
-                                  if (post['uid'] != null) {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => FriendProfileScreen(
-                                          uid: post['uid'],
+                              const SizedBox(width: 8),
+                              Expanded(
+                                flex: 3,
+                                child: GestureDetector(
+                                  onTap: () {
+                                    if (post['uid'] != null) {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => FriendProfileScreen(
+                                            uid: post['uid'],
+                                          ),
                                         ),
+                                      );
+                                    }
+                                  },
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 18,
+                                        backgroundColor: const Color(0xFF0A2463),
+                                        backgroundImage: _getAvatarProvider(
+                                          post['friendPic'],
+                                        ),
+                                        child:
+                                        (post['friendPic'] == null ||
+                                            post['friendPic'].isEmpty)
+                                            ? const Icon(
+                                          Icons.person,
+                                          color: Colors.white,
+                                          size: 18,
+                                        )
+                                            : null,
                                       ),
-                                    );
-                                  }
-                                },
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    CircleAvatar(
-                                      radius: 20,
-                                      backgroundColor: const Color(0xFF0A2463),
-                                      backgroundImage: _getAvatarProvider(
-                                        post['friendPic'],
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        post['friendProfileName'] ?? post['friendName'],
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: 10,
+                                          color: Color(0xFF0A2463),
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        textAlign: TextAlign.center,
                                       ),
-                                      child:
-                                          (post['friendPic'] == null ||
-                                              post['friendPic'].isEmpty)
-                                          ? const Icon(
-                                              Icons.person,
-                                              color: Colors.white,
-                                              size: 20,
-                                            )
-                                          : null,
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      post['friendProfileName'] ??
-                                          post['friendName'],
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                        fontSize: 11,
-                                        color: Color(0xFF0A2463),
+                                      Text(
+                                        '@${post['friendUsername'] ?? post['friendName']}',
+                                        style: const TextStyle(
+                                          color: Colors.black54,
+                                          fontSize: 9,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        textAlign: TextAlign.center,
                                       ),
-                                    ),
-                                    Text(
-                                      '@${post['friendUsername'] ?? post['friendName']}',
-                                      style: const TextStyle(
-                                        color: Colors.black54,
-                                        fontSize: 10,
-                                      ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ],
@@ -1138,7 +1263,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               left: 24,
               right: 24,
               top: 16,
-              bottom: 120,
+              bottom: 160,
             ),
             itemCount: grouped.keys.length,
             itemBuilder: (context, index) {
@@ -1159,7 +1284,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     ),
                   ),
                   ...items.map(
-                    (item) => Container(
+                        (item) => Container(
                       margin: const EdgeInsets.only(bottom: 12),
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
@@ -1184,12 +1309,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           ),
                           child: item.posterUrl != null
                               ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: CachedNetworkImage(
-                                    imageUrl: item.posterUrl!,
-                                    fit: BoxFit.cover,
-                                  ),
-                                )
+                            borderRadius: BorderRadius.circular(8),
+                            child: CachedNetworkImage(
+                              imageUrl: item.posterUrl!,
+                              fit: BoxFit.cover,
+                            ),
+                          )
                               : const Icon(Icons.movie, color: Colors.black12),
                         ),
                         title: Text(
@@ -1224,15 +1349,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         ),
                         trailing: item.isLiked == true
                             ? const Icon(
-                                Icons.thumb_up_rounded,
-                                color: Color(0xFF0A2463),
-                              )
+                          Icons.thumb_up_rounded,
+                          color: Color(0xFF0A2463),
+                        )
                             : (item.isLiked == false
-                                  ? const Icon(
-                                      Icons.thumb_down_rounded,
-                                      color: Color(0xFFFF6B00),
-                                    )
-                                  : null),
+                            ? const Icon(
+                          Icons.thumb_down_rounded,
+                          color: Color(0xFFFF6B00),
+                        )
+                            : null),
                       ),
                     ),
                   ),
@@ -1277,87 +1402,87 @@ class WatchLaterScreen extends StatelessWidget {
       ),
       body: watchLaterItems.isEmpty
           ? const Center(
-              child: Text(
-                "Your Watch Later list is empty.",
-                style: TextStyle(color: Colors.black38, fontSize: 16),
-              ),
-            )
+        child: Text(
+          "Your Watch Later list is empty.",
+          style: TextStyle(color: Colors.black38, fontSize: 16),
+        ),
+      )
           : ListView.builder(
-              padding: const EdgeInsets.only(
-                left: 24,
-                right: 24,
-                top: 24,
-                bottom: 120,
-              ),
-              itemCount: watchLaterItems.length,
-              itemBuilder: (context, index) {
-                final item = watchLaterItems[index];
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 16),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.04),
-                        blurRadius: 15,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Container(
-                      width: 50,
-                      height: 75,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        color: Colors.grey[200],
-                      ),
-                      child: item.posterUrl != null
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: CachedNetworkImage(
-                                imageUrl: item.posterUrl!,
-                                fit: BoxFit.cover,
-                              ),
-                            )
-                          : const Icon(Icons.movie, color: Colors.black12),
-                    ),
-                    title: Text(
-                      item.title,
-                      style: const TextStyle(
-                        color: Color(0xFF0A2463),
-                        fontWeight: FontWeight.w900,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: Text(
-                      'Progress: ${item.progress}/${item.total}',
-                      style: const TextStyle(
-                        color: Colors.black45,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(
-                        Icons.settings_backup_restore_rounded,
-                        color: Color(0xFFFF6B00),
-                      ),
-                      tooltip: 'Restore to Dashboard',
-                      onPressed: () {
-                        item.isWatchLater = false;
-                        context.read<JournalProvider>().updateExistingMedia(
-                          item,
-                        );
-                      },
-                    ),
-                  ),
-                );
-              },
+        padding: const EdgeInsets.only(
+          left: 24,
+          right: 24,
+          top: 24,
+          bottom: 160,
+        ),
+        itemCount: watchLaterItems.length,
+        itemBuilder: (context, index) {
+          final item = watchLaterItems[index];
+          return Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 15,
+                  offset: const Offset(0, 8),
+                ),
+              ],
             ),
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Container(
+                width: 50,
+                height: 75,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: Colors.grey[200],
+                ),
+                child: item.posterUrl != null
+                    ? ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: CachedNetworkImage(
+                    imageUrl: item.posterUrl!,
+                    fit: BoxFit.cover,
+                  ),
+                )
+                    : const Icon(Icons.movie, color: Colors.black12),
+              ),
+              title: Text(
+                item.title,
+                style: const TextStyle(
+                  color: Color(0xFF0A2463),
+                  fontWeight: FontWeight.w900,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                'Progress: ${item.progress}/${item.total}',
+                style: const TextStyle(
+                  color: Colors.black45,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              trailing: IconButton(
+                icon: const Icon(
+                  Icons.settings_backup_restore_rounded,
+                  color: Color(0xFFFF6B00),
+                ),
+                tooltip: 'Restore to Dashboard',
+                onPressed: () {
+                  item.isWatchLater = false;
+                  context.read<JournalProvider>().updateExistingMedia(
+                    item,
+                  );
+                },
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }
@@ -1371,15 +1496,13 @@ class CompletedMediaScreen extends StatefulWidget {
 class _CompletedMediaScreenState extends State<CompletedMediaScreen> {
   String _typeFilter = 'All';
   String _ratingFilter = 'All';
-
   @override
   Widget build(BuildContext context) {
     final allItems = context.watch<JournalProvider>().activeItems;
-    var completedItems = allItems
-        .where((item) => item.completedCount > 0)
-        .toList();
 
-    // Apply Type Filter
+    // FIX: Using the new grouping function to aggregate duplicated entries
+    var completedItems = getGroupedCompletedItems(allItems);
+
     if (_typeFilter == 'Movies') {
       completedItems = completedItems.where((i) => i.type == 'Movie').toList();
     }
@@ -1387,7 +1510,6 @@ class _CompletedMediaScreenState extends State<CompletedMediaScreen> {
       completedItems = completedItems.where((i) => i.type == 'Show').toList();
     }
 
-    // Apply Rating Filter
     if (_ratingFilter == 'Liked') {
       completedItems = completedItems.where((i) => i.isLiked == true).toList();
     }
@@ -1427,94 +1549,94 @@ class _CompletedMediaScreenState extends State<CompletedMediaScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children:
-                      [
-                            {'val': 'All', 'icon': Icons.grid_view_rounded},
-                            {'val': 'Movies', 'icon': Icons.movie_rounded},
-                            {'val': 'Shows', 'icon': Icons.tv_rounded},
-                          ]
-                          .map(
-                            (f) => GestureDetector(
-                              onTap: () => setState(
-                                () => _typeFilter = f['val'] as String,
-                              ),
-                              child: Container(
-                                margin: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: _typeFilter == f['val']
-                                      ? const Color(0xFF0A2463)
-                                      : Colors.grey[200],
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Icon(
-                                  f['icon'] as IconData,
-                                  size: 20,
-                                  color: _typeFilter == f['val']
-                                      ? Colors.white
-                                      : Colors.black45,
-                                ),
-                              ),
-                            ),
-                          )
-                          .toList(),
+                  [
+                    {'val': 'All', 'icon': Icons.grid_view_rounded},
+                    {'val': 'Movies', 'icon': Icons.movie_rounded},
+                    {'val': 'Shows', 'icon': Icons.tv_rounded},
+                  ]
+                      .map(
+                        (f) => GestureDetector(
+                      onTap: () => setState(
+                            () => _typeFilter = f['val'] as String,
+                      ),
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _typeFilter == f['val']
+                              ? const Color(0xFF0A2463)
+                              : Colors.grey[200],
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Icon(
+                          f['icon'] as IconData,
+                          size: 20,
+                          color: _typeFilter == f['val']
+                              ? Colors.white
+                              : Colors.black45,
+                        ),
+                      ),
+                    ),
+                  )
+                      .toList(),
                 ),
                 const SizedBox(height: 12),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children:
-                      [
-                            {
-                              'val': 'All',
-                              'icon': Icons.thumbs_up_down_rounded,
-                            },
-                            {'val': 'Liked', 'icon': Icons.thumb_up_rounded},
-                            {
-                              'val': 'Disliked',
-                              'icon': Icons.thumb_down_rounded,
-                            },
-                          ]
-                          .map(
-                            (f) => GestureDetector(
-                              onTap: () => setState(
-                                () => _ratingFilter = f['val'] as String,
-                              ),
-                              child: Container(
-                                margin: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: _ratingFilter == f['val']
-                                      ? const Color(0xFFFF6B00)
-                                      : Colors.grey[200],
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Icon(
-                                  f['icon'] as IconData,
-                                  size: 20,
-                                  color: _ratingFilter == f['val']
-                                      ? Colors.white
-                                      : Colors.black45,
-                                ),
-                              ),
-                            ),
-                          )
-                          .toList(),
+                  [
+                    {
+                      'val': 'All',
+                      'icon': Icons.thumbs_up_down_rounded,
+                    },
+                    {'val': 'Liked', 'icon': Icons.thumb_up_rounded},
+                    {
+                      'val': 'Disliked',
+                      'icon': Icons.thumb_down_rounded,
+                    },
+                  ]
+                      .map(
+                        (f) => GestureDetector(
+                      onTap: () => setState(
+                            () => _ratingFilter = f['val'] as String,
+                      ),
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _ratingFilter == f['val']
+                              ? const Color(0xFFFF6B00)
+                              : Colors.grey[200],
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Icon(
+                          f['icon'] as IconData,
+                          size: 20,
+                          color: _ratingFilter == f['val']
+                              ? Colors.white
+                              : Colors.black45,
+                        ),
+                      ),
+                    ),
+                  )
+                      .toList(),
                 ),
               ],
             ),
           ),
           Expanded(
             child: GridView.builder(
-              padding: const EdgeInsets.only(left: 24, right: 24, bottom: 120),
+              padding: const EdgeInsets.only(left: 24, right: 24, bottom: 160),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 3,
                 childAspectRatio: 0.65,
@@ -1524,85 +1646,90 @@ class _CompletedMediaScreenState extends State<CompletedMediaScreen> {
               itemCount: completedItems.length,
               itemBuilder: (context, index) {
                 final item = completedItems[index];
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.1),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 5),
+
+                // FIX: Wrapped grid items in a GestureDetector to trigger Replay
+                return GestureDetector(
+                  onTap: () => showReplayDialog(context, item),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.1),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 5),
+                                  ),
+                                ],
+                                color: Colors.grey[200],
+                              ),
+                              child: item.posterUrl == null
+                                  ? const Center(
+                                child: Icon(
+                                  Icons.movie,
+                                  color: Colors.black12,
+                                  size: 24,
                                 ),
-                              ],
-                              color: Colors.grey[200],
-                            ),
-                            child: item.posterUrl == null
-                                ? const Center(
-                                    child: Icon(
-                                      Icons.movie,
-                                      color: Colors.black12,
-                                      size: 24,
-                                    ),
-                                  )
-                                : ClipRRect(
-                                    borderRadius: BorderRadius.circular(16),
-                                    child: CachedNetworkImage(
-                                      imageUrl: item.posterUrl!,
-                                      fit: BoxFit.cover,
-                                    ),
-                                  ),
-                          ),
-                          if (item.completedCount > 1)
-                            Positioned(
-                              top: -6,
-                              right: -6,
-                              child: Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    colors: [
-                                      Color(0xFFFF6B00),
-                                      Color(0xFFFFC300),
-                                    ],
-                                  ),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: Colors.white,
-                                    width: 2,
-                                  ),
-                                ),
-                                child: Text(
-                                  'x${item.completedCount}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 10,
-                                  ),
+                              )
+                                  : ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: CachedNetworkImage(
+                                  imageUrl: item.posterUrl!,
+                                  fit: BoxFit.cover,
                                 ),
                               ),
                             ),
-                        ],
+                            if (item.completedCount > 1)
+                              Positioned(
+                                top: -6,
+                                right: -6,
+                                child: Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [
+                                        Color(0xFFFF6B00),
+                                        Color(0xFFFFC300),
+                                      ],
+                                    ),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: Colors.white,
+                                      width: 2,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    'x${item.completedCount}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      item.title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                        color: Color(0xFF0A2463),
+                      const SizedBox(height: 8),
+                      Text(
+                        item.title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                          color: Color(0xFF0A2463),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+                    ],
+                  ),
                 );
               },
             ),

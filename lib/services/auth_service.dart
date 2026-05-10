@@ -53,6 +53,19 @@ class AuthService {
     }
   }
 
+  Future<void> resetPassword(String email) async {
+    try {
+      await _auth.sendPasswordResetEmail(email: email);
+    } catch (e) {
+      throw Exception(
+        e
+            .toString()
+            .replaceAll(RegExp(r'^\[.*?\]\s*'), '')
+            .replaceAll('Exception: ', ''),
+      );
+    }
+  }
+
   Future<User?> loginWithEmail(String email, String password) async {
     try {
       UserCredential result = await _auth.signInWithEmailAndPassword(

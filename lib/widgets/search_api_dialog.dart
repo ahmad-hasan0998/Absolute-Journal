@@ -8,11 +8,13 @@ import 'package:final_project/locator.dart';
 class SearchApiDialog extends StatefulWidget {
   final Function(MediaItem) onItemAdded;
   final bool isForTop5;
+  final String initialCategory;
 
   const SearchApiDialog({
     super.key,
     required this.onItemAdded,
     this.isForTop5 = false,
+    this.initialCategory = 'Movie',
   });
 
   @override
@@ -22,11 +24,17 @@ class SearchApiDialog extends StatefulWidget {
 class _SearchApiDialogState extends State<SearchApiDialog> {
   final TextEditingController _searchController = TextEditingController();
   final ApiService _apiService = locator<ApiService>();
-  String _selectedCategory = 'Movie';
+  late String _selectedCategory;
   List<Map<String, dynamic>> _searchResults = [];
   bool _isLoading = false;
   String _errorMessage = '';
   Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedCategory = widget.initialCategory;
+  }
 
   void _onSearchChanged(String query) {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
@@ -305,7 +313,9 @@ class _SearchApiDialogState extends State<SearchApiDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                widget.isForTop5 ? 'Search Top 5' : 'Add Media',
+                widget.isForTop5
+                    ? 'Search Top ${_selectedCategory}s'
+                    : 'Add Media',
                 style: const TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w900,
@@ -314,15 +324,18 @@ class _SearchApiDialogState extends State<SearchApiDialog> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _buildCategoryButton(Icons.movie_rounded, 'Movie'),
-                  const SizedBox(width: 16),
-                  _buildCategoryButton(Icons.tv_rounded, 'Show'),
-                ],
-              ),
-              const SizedBox(height: 32),
+              // Hide category toggle if it's for Top 5
+              if (!widget.isForTop5) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _buildCategoryButton(Icons.movie_rounded, 'Movie'),
+                    const SizedBox(width: 16),
+                    _buildCategoryButton(Icons.tv_rounded, 'Show'),
+                  ],
+                ),
+                const SizedBox(height: 32),
+              ],
               Container(
                 decoration: BoxDecoration(
                   boxShadow: [
@@ -339,7 +352,9 @@ class _SearchApiDialogState extends State<SearchApiDialog> {
                   onChanged: _onSearchChanged,
                   onSubmitted: _performSearch,
                   decoration: InputDecoration(
-                    hintText: 'Search for a title...',
+                    hintText: widget.isForTop5
+                        ? 'Search for a ${_selectedCategory.toLowerCase()}...'
+                        : 'Search for a title...',
                     prefixIcon: const Icon(
                       Icons.search_rounded,
                       color: Color(0xFF0A2463),
@@ -426,15 +441,18 @@ class _SearchApiDialogState extends State<SearchApiDialog> {
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              trailing: IconButton(
-                                icon: const Icon(
-                                  Icons.add_circle_rounded,
-                                  color: Color(0xFFFF6B00),
-                                  size: 36,
-                                ),
-                                onPressed: () =>
-                                    _addMediaWithOptions(item, 'Active'),
-                              ),
+                              // Remove the plus button entirely if it is for the Top 5
+                              trailing: widget.isForTop5
+                                  ? null
+                                  : IconButton(
+                                      icon: const Icon(
+                                        Icons.add_circle_rounded,
+                                        color: Color(0xFFFF6B00),
+                                        size: 36,
+                                      ),
+                                      onPressed: () =>
+                                          _addMediaWithOptions(item, 'Active'),
+                                    ),
                               onTap: () => _showAddMenu(context, item),
                             ),
                           );
